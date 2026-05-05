@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const SUGGESTIONS = [
-  '2-day retreat near Paris for 15 people with team-building',
+  "I want to book 'Hotel Paris 3' for 15 people for 4 nights. Calculate the total budget if the hotel is €300/night, flights are €150 per person, meals are €50 per person per day, and there is a 20% VAT on the final total.",
   'Beach offsite in Lisbon for 25 with kayak workshop',
   'Mountain lodge in the Alps for a leadership summit',
   'Wellness retreat in Marrakech with 4-star catering',
