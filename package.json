@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.59",
+    "@ai-sdk/react": "^3.0.177",
+    "@nanostores/react": "github:ai/react",
     "ai": "^6.0.175",
     "convex": "^1.37.0",
     "next": "16.2.4",
