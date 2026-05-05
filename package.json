@@ -9,14 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.67",
     "@ai-sdk/openai": "^3.0.59",
     "@ai-sdk/react": "^3.0.177",
     "@nanostores/react": "github:ai/react",
     "ai": "^6.0.175",
     "convex": "^1.37.0",
+    "langfuse": "^3.38.20",
     "next": "16.2.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

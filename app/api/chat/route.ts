@@ -1,47 +1,105 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, convertToModelMessages, tool } from 'ai';
-import { z } from 'zod'; // Zod comes pre-installed with Next.js, it helps validate data
+import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai';
+import { z } from 'zod';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
+import { Langfuse } from 'langfuse';
 
-// Connect securely to your Convex database
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
+// .chat() targets /v1/chat/completions (which OpenRouter supports), not /v1/responses.
 const openRouter = createOpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const langfuse =
+  process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY
+    ? new Langfuse({
+        publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+        secretKey: process.env.LANGFUSE_SECRET_KEY,
+        baseUrl: process.env.LANGFUSE_BASEURL ?? process.env.LANGFUSE_HOST,
+      })
+    : null;
+
+const searchVenuesSchema = z.object({
+  location: z.string().describe('The city or region the user wants to visit'),
+});
+
+const venueTools = {
+  searchVenues: tool({
+    description: 'Search the database for offsite venues based on location',
+    inputSchema: searchVenuesSchema,
+    execute: async (args: z.infer<typeof searchVenuesSchema>) => {
+      console.log(`[SERVER] AI is searching Convex for venues in: ${args.location}`);
+
+      const searchVenuesRef = (
+        (api as { venues?: { searchVenues?: unknown } }).venues?.searchVenues ??
+        'venues:searchVenues'
+      ) as Parameters<typeof convex.query>[0];
+
+      const venues = await convex.query(searchVenuesRef, { location: args.location });
+
+      return JSON.parse(JSON.stringify({
+        resultsFound: venues?.length || 0,
+        venues: venues
+      }));
+    },
+  }),
+};
+
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
-  const result = await streamText({
-    // Upgrade to the smarter, currently free Llama 3.3 model
-    model: openRouter('meta-llama/llama-3.3-70b-instruct:free'),
-    messages: await convertToModelMessages(messages),
+  // openrouter/free is OpenRouter's auto-router that selects an available free model.
+  // The model can be overridden via the OPENROUTER_MODEL env var.
+  const modelId = process.env.OPENROUTER_MODEL ?? 'openrouter/free';
+  const sessionId = req.headers.get('x-session-id') ?? 'offsite-concierge-local';
+  const modelMessages = await convertToModelMessages(messages);
+
+  const result = streamText({
+    model: openRouter.chat(modelId),
+    messages: modelMessages,
     system: "You are an elite corporate offsite planner for Seminaire.com. Your job is to help the user design their perfect team retreat. Always use the searchVenues tool to find actual locations before recommending anything.",
-    
-    // THE MAGIC: Giving the AI hands to search the database
-    tools: {
-      searchVenues: tool({
-        description: 'Search the database for offsite venues based on location',
-        // Define what the AI needs to provide to run the search
-        inputSchema: z.object({
-          location: z.string().describe('The city or region the user wants to visit'),
-        }),
-        // The actual function that runs when the AI decides to use this tool
-        execute: async ({ location }) => {
-          console.log(`AI is searching Convex for venues in: ${location}`);
-          // Query your Convex database
-          // Generated Convex API types may be stale during local setup; fall back to function path string.
-          const searchVenuesRef = (
-            (api as { venues?: { searchVenues?: unknown } }).venues?.searchVenues ??
-            'venues:searchVenues'
-          ) as Parameters<typeof convex.query>[0];
-          const venues = await convex.query(searchVenuesRef, { location });
-          return venues;
-        },
-      }),
+    maxRetries: 2,
+    stopWhen: stepCountIs(5),
+    tools: venueTools,
+    onError: ({ error }) => {
+      const e = error as { statusCode?: number; message?: string };
+      console.error(`[chat] model "${modelId}" failed (${e.statusCode ?? '?'}): ${e.message ?? error}`);
+    },
+    onFinish: async ({ text, totalUsage, finishReason, steps, model }) => {
+      if (!langfuse) return;
+
+      try {
+        const trace = langfuse.trace({
+          name: 'Offsite-Concierge-Chat',
+          sessionId,
+          input: messages,
+          output: text,
+          metadata: {
+            finishReason,
+            modelProvider: model.provider,
+            stepCount: steps.length,
+          },
+        });
+
+        trace.generation({
+          name: 'chat-completion',
+          model: model.modelId,
+          input: modelMessages,
+          output: text,
+          usageDetails: {
+            input: totalUsage.inputTokens ?? 0,
+            output: totalUsage.outputTokens ?? 0,
+            total: totalUsage.totalTokens ?? 0,
+          },
+        });
+
+        await langfuse.flushAsync();
+      } catch (error) {
+        console.error('[langfuse] failed to log chat trace:', error);
+      }
     },
   });
 
