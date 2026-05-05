@@ -106,53 +106,61 @@ export default function Chat() {
             >
               {messages.length === 0 && <EmptyState onPick={submitText} />}
 
-              {messages.map((m) => (
-                <article
-                  key={m.id}
-                  className={`group relative max-w-[92%] animate-slide-up rounded-3xl border p-4 shadow-xl sm:max-w-[80%] ${
-                    m.role === 'user'
-                      ? 'ml-auto border-fuchsia-300/30 bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-500 text-white shadow-fuchsia-500/30'
-                      : 'mr-auto border-white/10 bg-white/[0.04] text-zinc-100 backdrop-blur'
-                  }`}
-                >
-                  <p
-                    className={`mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
-                      m.role === 'user' ? 'text-white/70' : 'text-fuchsia-300/80'
+              {messages.map((m) => {
+                const firstToolPartIndex = m.parts.findIndex((part) =>
+                  part.type.startsWith('tool-'),
+                );
+
+                return (
+                  <article
+                    key={m.id}
+                    className={`group relative max-w-[92%] animate-slide-up rounded-3xl border p-4 shadow-xl sm:max-w-[80%] ${
+                      m.role === 'user'
+                        ? 'ml-auto border-fuchsia-300/30 bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-500 text-white shadow-fuchsia-500/30'
+                        : 'mr-auto border-white/10 bg-white/[0.04] text-zinc-100 backdrop-blur'
                     }`}
                   >
-                    {m.role === 'user' ? 'You' : 'Concierge'}
-                  </p>
+                    <p
+                      className={`mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                        m.role === 'user' ? 'text-white/70' : 'text-fuchsia-300/80'
+                      }`}
+                    >
+                      {m.role === 'user' ? 'You' : 'Concierge'}
+                    </p>
 
-                  <div className="space-y-2 text-[15px] leading-7 [overflow-wrap:anywhere]">
-                    {m.parts.map((part, index) => {
-                      if (part.type === 'text') {
-                        if (m.role === 'user') {
+                    <div className="space-y-2 text-[15px] leading-7 [overflow-wrap:anywhere]">
+                      {m.parts.map((part, index) => {
+                        if (part.type === 'text') {
+                          if (m.role === 'user') {
+                            return (
+                              <p key={index} className="whitespace-pre-wrap">
+                                {part.text}
+                              </p>
+                            );
+                          }
                           return (
-                            <p key={index} className="whitespace-pre-wrap">
-                              {part.text}
-                            </p>
+                            <ReactMarkdown
+                              key={index}
+                              remarkPlugins={[remarkGfm]}
+                              components={markdownComponents}
+                            >
+                              {normalizeAssistantMarkdown(part.text)}
+                            </ReactMarkdown>
                           );
                         }
-                        return (
-                          <ReactMarkdown
-                            key={index}
-                            remarkPlugins={[remarkGfm]}
-                            components={markdownComponents}
-                          >
-                            {part.text}
-                          </ReactMarkdown>
-                        );
-                      }
 
-                      if (part.type.startsWith('tool-')) {
-                        return <ToolBadge key={index} />;
-                      }
+                        if (part.type.startsWith('tool-')) {
+                          return index === firstToolPartIndex ? (
+                            <ToolBadge key={index} />
+                          ) : null;
+                        }
 
-                      return null;
-                    })}
-                  </div>
-                </article>
-              ))}
+                        return null;
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
 
               {isThinking && <ThinkingBubble />}
 
@@ -276,6 +284,16 @@ function ToolBadge() {
   );
 }
 
+function normalizeAssistantMarkdown(markdown: string) {
+  return markdown
+    .replace(/<ul>\s*/gi, '')
+    .replace(/\s*<\/ul>/gi, '')
+    .replace(/<li>\s*/gi, '• ')
+    .replace(/\s*<\/li>/gi, '<br />')
+    .replace(/<br\s*\/?>/gi, '  \n')
+    .replace(/&nbsp;/gi, ' ');
+}
+
 /* ============================================================
    Icons
 ============================================================ */
@@ -367,7 +385,7 @@ const markdownComponents = {
   ),
   table: (p: React.ComponentProps<'table'>) => (
     <div className="my-3 overflow-x-auto rounded-xl border border-white/10">
-      <table className="w-full border-collapse text-sm" {...p} />
+      <table className="min-w-[760px] border-collapse text-sm" {...p} />
     </div>
   ),
   thead: (p: React.ComponentProps<'thead'>) => (
@@ -375,12 +393,15 @@ const markdownComponents = {
   ),
   th: (p: React.ComponentProps<'th'>) => (
     <th
-      className="border-b border-white/10 px-3 py-2 text-left font-semibold text-white"
+      className="whitespace-nowrap border-b border-white/10 px-4 py-3 text-left font-semibold text-white"
       {...p}
     />
   ),
   td: (p: React.ComponentProps<'td'>) => (
-    <td className="border-b border-white/5 px-3 py-2 align-top text-zinc-200" {...p} />
+    <td
+      className="border-b border-white/5 px-4 py-3 align-top leading-6 text-zinc-200 [overflow-wrap:normal]"
+      {...p}
+    />
   ),
   blockquote: (p: React.ComponentProps<'blockquote'>) => (
     <blockquote
