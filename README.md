@@ -19,6 +19,23 @@ AI-powered offsite planning assistant for Seminaire.com. The app provides:
 
 ---
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><b>Landing</b></td>
+    <td><b>Sign in</b></td>
+    <td><b>Chat</b></td>
+  </tr>
+  <tr>
+    <td><img src="public/readme/landing.png" width="300" alt="Landing page screenshot" /></td>
+    <td><img src="public/readme/sign-in.png" width="300" alt="Sign-in page screenshot" /></td>
+    <td><img src="public/readme/chat.png" width="300" alt="Chat page screenshot" /></td>
+  </tr>
+</table>
+
+---
+
 ## Tech stack
 
 - **Next.js** (App Router) + **React**
