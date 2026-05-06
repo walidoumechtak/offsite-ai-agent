@@ -34,6 +34,10 @@ AI-powered offsite planning assistant for Seminaire.com. The app provides:
   </tr>
 </table>
 
+### Loom walkthrough
+
+Watch the recorded product walkthrough on Loom: [Seminaire Concierge walkthrough](https://www.loom.com/share/6691f508cb6e4f1688abe84c851329ff)
+
 ---
 
 ## Tech stack
