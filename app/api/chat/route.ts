@@ -1,4 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { auth } from '@clerk/nextjs/server';
 import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { ConvexHttpClient } from "convex/browser";
@@ -58,6 +59,12 @@ const searchVenuesSchema = z.object({
 
 const calculateBudgetSchema = z.object({
   code: z.string().describe('Python code to execute. Use print() for the final answer.'),
+});
+
+const finalizeBookingSchema = z.object({
+  userEmail: z.string().email().describe('The email address of the user to send the itinerary to'),
+  venueName: z.string().describe('The chosen offsite venue'),
+  totalCost: z.number().describe('The calculated total budget'),
 });
 
 const venueTools = {
@@ -163,21 +170,73 @@ const venueTools = {
       }
     },
   }),
+  finalizeBooking: tool({
+    description:
+      'Once the user agrees to a venue and budget, trigger the n8n automation which sends the official itinerary and calendar holds.',
+    inputSchema: finalizeBookingSchema,
+    execute: async ({ userEmail, venueName, totalCost }: z.infer<typeof finalizeBookingSchema>) => {
+      console.log(`[SERVER] Triggering n8n workflow for ${userEmail}...`);
+
+      const n8nWebhookUrl = normalizeEnvValue(process.env.N8N_WEBHOOK_URL);
+      if (!n8nWebhookUrl) {
+        return {
+          status: 'Failed',
+          error:
+            'N8N_WEBHOOK_URL is not configured on the server. Set it in .env.local and restart the dev server.',
+        };
+      }
+
+      try {
+        const response = await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: userEmail,
+            venue: venueName,
+            totalCost,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => '');
+          throw new Error(`n8n webhook failed (${response.status}): ${body.slice(0, 500)}`);
+        }
+
+        return {
+          status: 'Success',
+          message: `Official itinerary triggered via n8n for ${venueName} and sent to ${userEmail}.`,
+        };
+      } catch (error) {
+        console.error('[SERVER] n8n webhook error:', error);
+        return { status: 'Failed', error: 'Could not trigger n8n automation.' };
+      }
+    },
+  }),
 };
 
 export async function POST(req: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const { messages } = await req.json();
 
   // openrouter/free is OpenRouter's auto-router that selects an available free model.
   // The model can be overridden via the OPENROUTER_MODEL env var.
   const modelId = process.env.OPENROUTER_MODEL ?? 'openrouter/free';
-  const sessionId = req.headers.get('x-session-id') ?? 'offsite-concierge-local';
+  const sessionId = req.headers.get('x-session-id') ?? userId;
   const modelMessages = await convertToModelMessages(messages);
 
   const result = streamText({
     model: openRouter.chat(modelId),
     messages: modelMessages,
-    system: "You are an elite corporate offsite planner for Seminaire.com. Your job is to help the user design their perfect team retreat. Always use the searchVenues tool to find actual locations before recommending anything. If the user asks for budget calculations, taxes, currency math, or complex arithmetic, write Python and use the calculateBudget tool. Do not do budget math in your head.",
+    system:
+      "You are an elite corporate offsite planner for Seminaire.com. Your job is to help the user design their perfect team retreat. Always use the searchVenues tool to find actual locations before recommending anything. If the user asks for budget calculations, taxes, currency math, or complex arithmetic, write Python and use the calculateBudget tool. Do not do budget math in your head. Once the user explicitly agrees on a venue and confirms they want to proceed, call finalizeBooking with the user's email, chosen venue name, and final total cost.",
     maxRetries: 2,
     stopWhen: stepCountIs(5),
     tools: venueTools,
